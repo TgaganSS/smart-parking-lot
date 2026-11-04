@@ -1,18 +1,30 @@
 """Smart Parking Lot Management System
-Python OOP + SQLite | Menu-driven academic project
+Python OOP + SQLite + text/CSV file handling | Menu-driven academic project
 Run: python parking_system.py
 """
 from __future__ import annotations
+
+import csv
+import math
+import re
 import sqlite3
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-DB_PATH = Path(__file__).with_name("parking.db")
+BASE_DIR = Path(__file__).resolve().parent
+DB_PATH = BASE_DIR / "parking.db"
+SCHEMA_PATH = BASE_DIR / "schema.sql"
+RECEIPT_DIR = BASE_DIR / "receipts"
+EXPORT_DIR = BASE_DIR / "exports"
 TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
+# --------------------------------------------------------------------------- #
+# Exceptions
+# --------------------------------------------------------------------------- #
 class ParkingError(Exception):
     """Base exception for parking application errors."""
 
@@ -29,96 +41,162 @@ class VehicleNotParkedError(ParkingError):
     """Raised when an exit is requested for a vehicle not currently parked."""
 
 
+# --------------------------------------------------------------------------- #
+# Database access
+# --------------------------------------------------------------------------- #
 class Database:
-    """Encapsulates SQLite connection and schema initialization."""
-    def __init__(self, path: Path = DB_PATH):
-        self.path = path
+    """Encapsulates SQLite connections and schema initialization.
+
+    Every unit of work runs inside ``session()``, which opens a connection,
+    wraps the work in one transaction (commit on success, rollback on error)
+    and always closes the connection afterwards.
+    """
+
+    def __init__(self, path: Path = DB_PATH, schema_path: Path = SCHEMA_PATH):
+        self.path = Path(path)
+        self.schema_path = Path(schema_path)
+        self.legacy_backup: Optional[Path] = None
+        self._backup_legacy_database()
         self.initialize()
 
-    def connect(self):
-        conn = sqlite3.connect(self.path)
+    @contextmanager
+    def session(self, write: bool = False):
+        conn = sqlite3.connect(self.path, isolation_level=None)  # manual transactions
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON")
-        return conn
+        try:
+            conn.execute("PRAGMA foreign_keys = ON")
+            conn.execute("BEGIN IMMEDIATE" if write else "BEGIN")
+            yield conn
+            conn.execute("COMMIT")
+        except BaseException:
+            if conn.in_transaction:
+                conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
 
-    def initialize(self):
-        schema = """
-        CREATE TABLE IF NOT EXISTS Vehicles (
-            vehicle_number TEXT PRIMARY KEY,
-            vehicle_type TEXT NOT NULL CHECK(vehicle_type IN ('Car','Bike')),
-            entry_time TEXT NOT NULL,
-            exit_time TEXT,
-            slot_id INTEGER,
-            status TEXT NOT NULL CHECK(status IN ('PARKED','EXITED'))
-        );
-        CREATE TABLE IF NOT EXISTS ParkingSlots (
-            slot_id INTEGER PRIMARY KEY,
-            slot_type TEXT NOT NULL CHECK(slot_type IN ('Car','Bike','Any')),
-            is_occupied INTEGER NOT NULL DEFAULT 0 CHECK(is_occupied IN (0,1)),
-            vehicle_number TEXT UNIQUE,
-            FOREIGN KEY(vehicle_number) REFERENCES Vehicles(vehicle_number)
-        );
-        CREATE TABLE IF NOT EXISTS Payments (
-            payment_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            vehicle_number TEXT NOT NULL,
-            duration_hours REAL NOT NULL,
-            amount REAL NOT NULL,
-            payment_time TEXT NOT NULL,
-            payment_status TEXT NOT NULL CHECK(payment_status IN ('PAID','FAILED')),
-            FOREIGN KEY(vehicle_number) REFERENCES Vehicles(vehicle_number)
-        );
-        """
-        with self.connect() as conn:
-            conn.executescript(schema)
+    def initialize(self) -> None:
+        """Create all tables, triggers and views from schema.sql."""
+        if not self.schema_path.is_file():
+            raise ParkingError(f"Schema file not found: {self.schema_path}")
+        script = self.schema_path.read_text(encoding="utf-8")
+        conn = sqlite3.connect(self.path)
+        try:
+            conn.executescript(script)
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _backup_legacy_database(self) -> None:
+        """Version 1 stored entry/exit times in Vehicles; move such a file aside."""
+        if not self.path.is_file():
+            return
+        conn = sqlite3.connect(self.path)
+        try:
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(Vehicles)")}
+        finally:
+            conn.close()
+        if "entry_time" in columns:
+            stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+            self.legacy_backup = self.path.with_name(f"{self.path.stem}_legacy_{stamp}.bak")
+            self.path.replace(self.legacy_backup)
 
 
+# --------------------------------------------------------------------------- #
+# Vehicles (abstraction, inheritance, polymorphism, encapsulation)
+# --------------------------------------------------------------------------- #
 class Vehicle(ABC):
     """Abstract base class for all supported vehicles."""
+
+    _PLATE_PATTERN = re.compile(r"^[A-Z0-9]{1,15}$")
+
     def __init__(self, vehicle_number: str):
-        number = vehicle_number.strip().upper()
-        if not number or len(number) > 20:
-            raise InvalidInputError("Vehicle number must contain 1–20 characters.")
-        self.__vehicle_number = number
+        self.vehicle_number = vehicle_number  # goes through the validating setter
+
+    @staticmethod
+    def normalize_number(raw: str) -> str:
+        """Upper-case a plate and drop spaces/hyphens ('tn 09-ab 1234' -> 'TN09AB1234')."""
+        if not isinstance(raw, str):
+            raise InvalidInputError("Vehicle number must be text.")
+        number = re.sub(r"[\s-]", "", raw).upper()
+        if not Vehicle._PLATE_PATTERN.match(number):
+            raise InvalidInputError(
+                "Vehicle number must be 1-15 letters/digits (spaces and hyphens are ignored)."
+            )
+        return number
 
     @property
     def vehicle_number(self) -> str:
         return self.__vehicle_number
 
+    @vehicle_number.setter
+    def vehicle_number(self, value: str) -> None:
+        self.__vehicle_number = self.normalize_number(value)
+
+    @property
+    def vehicle_type(self) -> str:
+        return self.__class__.__name__
+
     @abstractmethod
     def get_hourly_rate(self) -> float:
         """Return hourly parking rate."""
 
-    def calculate_fee(self, duration_hours: float) -> float:
-        if duration_hours < 0:
+    @staticmethod
+    def billable_hours(duration_hours: float) -> int:
+        """Every started hour is charged; the minimum charge is one hour."""
+        if isinstance(duration_hours, bool) or not isinstance(duration_hours, (int, float)):
+            raise InvalidInputError("Parking duration must be a number.")
+        if math.isnan(duration_hours) or duration_hours < 0:
             raise InvalidInputError("Parking duration cannot be negative.")
-        # Any started hour is charged as a full hour; minimum charge is one hour.
-        billable_hours = max(1, int(duration_hours) if duration_hours.is_integer()
-                            else int(duration_hours) + 1)
-        return round(billable_hours * self.get_hourly_rate(), 2)
+        # round() absorbs floating-point noise such as 1.0000000000002 hours
+        return max(1, math.ceil(round(duration_hours, 6)))
+
+    def calculate_fee(self, duration_hours: float) -> float:
+        # Polymorphism: the rate comes from whichever subclass this object is.
+        return round(self.billable_hours(duration_hours) * self.get_hourly_rate(), 2)
+
+    @staticmethod
+    def create(vehicle_type: str, vehicle_number: str) -> "Vehicle":
+        """Factory used when rebuilding a vehicle from a database row."""
+        try:
+            return VEHICLE_TYPES[vehicle_type](vehicle_number)
+        except KeyError:
+            raise InvalidInputError(f"Unsupported vehicle type: {vehicle_type!r}") from None
 
     def __str__(self):
-        return f"{self.__class__.__name__} ({self.vehicle_number})"
+        return f"{self.vehicle_type} ({self.vehicle_number})"
 
 
 class Car(Vehicle):
     """Car implementation with overridden hourly rate."""
+
     def get_hourly_rate(self) -> float:
         return 40.0
 
 
 class Bike(Vehicle):
     """Bike implementation with overridden hourly rate."""
+
     def get_hourly_rate(self) -> float:
         return 20.0
 
 
+VEHICLE_TYPES = {"Car": Car, "Bike": Bike}
+
+
+# --------------------------------------------------------------------------- #
+# Slots, payments, receipts
+# --------------------------------------------------------------------------- #
 class ParkingSlot:
-    """Represents one parking slot; database state is authoritative."""
+    """One parking slot. The database holds occupancy; this object holds identity and type."""
+
+    VALID_TYPES = ("Car", "Bike", "Any")
+
     def __init__(self, slot_id: int, slot_type: str = "Any"):
-        if slot_type not in {"Car", "Bike", "Any"}:
-            raise InvalidInputError("Slot type must be Car, Bike, or Any.")
-        self.__slot_id = int(slot_id)
-        self.__slot_type = slot_type
+        if isinstance(slot_id, bool) or not isinstance(slot_id, int) or slot_id < 1:
+            raise InvalidInputError("Slot id must be a positive integer.")
+        self.__slot_id = slot_id
+        self.slot_type = slot_type  # validating setter
 
     @property
     def slot_id(self) -> int:
@@ -128,230 +206,412 @@ class ParkingSlot:
     def slot_type(self) -> str:
         return self.__slot_type
 
+    @slot_type.setter
+    def slot_type(self, value: str) -> None:
+        if value not in self.VALID_TYPES:
+            raise InvalidInputError("Slot type must be Car, Bike, or Any.")
+        self.__slot_type = value
+
     def accepts(self, vehicle: Vehicle) -> bool:
-        return self.slot_type == "Any" or self.slot_type == vehicle.__class__.__name__
+        return self.slot_type == "Any" or self.slot_type == vehicle.vehicle_type
 
     def __str__(self):
         return f"Slot {self.slot_id} [{self.slot_type}]"
 
 
 class Payment:
-    """Payment record and receipt data."""
-    def __init__(self, vehicle_number: str, duration_hours: float, amount: float):
-        self.__vehicle_number = vehicle_number
+    """A payment for one completed visit."""
+
+    VALID_STATUSES = ("PAID", "FAILED")
+
+    def __init__(self, visit_id: int, duration_hours: float, amount: float, status: str = "PAID"):
+        self.__visit_id = visit_id
         self.__duration_hours = duration_hours
-        self.__amount = amount
+        self.amount = amount  # validating setter
+        self.status = status  # validating setter
+        self.__payment_id: Optional[int] = None
 
     @property
-    def amount(self):
+    def amount(self) -> float:
         return self.__amount
 
-    def process_payment(self, db: Database) -> int:
-        with db.connect() as conn:
-            cur = conn.execute(
-                """INSERT INTO Payments(vehicle_number,duration_hours,amount,payment_time,payment_status)
-                   VALUES(?,?,?,?,?)""",
-                (self.__vehicle_number, self.__duration_hours, self.__amount,
-                 datetime.now().strftime(TIME_FORMAT), "PAID")
-            )
-            return cur.lastrowid
+    @amount.setter
+    def amount(self, value: float) -> None:
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+            raise InvalidInputError("Payment amount must be a non-negative number.")
+        self.__amount = round(float(value), 2)
+
+    @property
+    def status(self) -> str:
+        return self.__status
+
+    @status.setter
+    def status(self, value: str) -> None:
+        if value not in self.VALID_STATUSES:
+            raise InvalidInputError("Payment status must be PAID or FAILED.")
+        self.__status = value
+
+    @property
+    def payment_id(self) -> Optional[int]:
+        return self.__payment_id
+
+    def process_payment(self, conn: sqlite3.Connection, paid_at: datetime) -> int:
+        """Insert this payment using the caller's transaction and return its id."""
+        cur = conn.execute(
+            "INSERT INTO Payments(visit_id,duration_hours,amount,payment_time,payment_status) "
+            "VALUES(?,?,?,?,?)",
+            (self.__visit_id, self.__duration_hours, self.amount,
+             paid_at.strftime(TIME_FORMAT), self.status),
+        )
+        self.__payment_id = cur.lastrowid
+        return self.__payment_id
 
 
 class Receipt:
-    """Formats a parking payment receipt."""
-    @staticmethod
-    def generate(receipt_id: int, vehicle: Vehicle, slot_id: int,
-                 entry: datetime, exit_time: datetime, duration: float, amount: float) -> str:
-        return (
-            "\n" + "=" * 42 + "\n"
-            "          SMART PARKING RECEIPT\n"
-            + "=" * 42 + "\n"
-            f"Receipt / Payment ID : {receipt_id}\n"
-            f"Vehicle              : {vehicle.vehicle_number}\n"
-            f"Vehicle type         : {vehicle.__class__.__name__}\n"
-            f"Parking slot         : {slot_id}\n"
-            f"Entry time           : {entry.strftime(TIME_FORMAT)}\n"
-            f"Exit time            : {exit_time.strftime(TIME_FORMAT)}\n"
-            f"Duration             : {duration:.2f} hour(s)\n"
-            f"Amount paid          : Rs. {amount:.2f}\n"
-            + "=" * 42
-        )
+    """Formats a parking receipt and saves it as a text file."""
+
+    def __init__(self, receipt_id: int, vehicle: Vehicle, slot_id: int,
+                 entry: datetime, exit_time: datetime, duration: float, amount: float):
+        self.receipt_id = receipt_id
+        self.vehicle = vehicle
+        self.slot_id = slot_id
+        self.entry = entry
+        self.exit_time = exit_time
+        self.duration = duration
+        self.amount = amount
+        self.file_path: Optional[Path] = None
+
+    def render(self) -> str:
+        line = "=" * 42
+        return "\n".join([
+            line,
+            "          SMART PARKING RECEIPT",
+            line,
+            f"Receipt / Payment ID : {self.receipt_id}",
+            f"Vehicle              : {self.vehicle.vehicle_number}",
+            f"Vehicle type         : {self.vehicle.vehicle_type}",
+            f"Parking slot         : {self.slot_id}",
+            f"Entry time           : {self.entry.strftime(TIME_FORMAT)}",
+            f"Exit time            : {self.exit_time.strftime(TIME_FORMAT)}",
+            f"Duration             : {self.duration:.2f} hour(s)",
+            f"Billable hours       : {Vehicle.billable_hours(self.duration)} "
+            f"@ Rs. {self.vehicle.get_hourly_rate():.2f}/hr",
+            f"Amount paid          : Rs. {self.amount:.2f}",
+            line,
+        ])
+
+    def save(self, directory: Path) -> Path:
+        """Write receipts/receipt_0001.txt (text-file persistence)."""
+        directory = Path(directory)
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / f"receipt_{self.receipt_id:04d}.txt"
+        path.write_text(self.render() + "\n", encoding="utf-8")
+        self.file_path = path
+        return path
+
+    def __str__(self):
+        return self.render()
 
 
+# --------------------------------------------------------------------------- #
+# Parking lot (composition: ParkingLot owns ParkingSlot objects)
+# --------------------------------------------------------------------------- #
 class ParkingLot:
-    """Coordinates slots, vehicle allocation, checkout, and persistence."""
-    def __init__(self, db: Database, total_car_slots: int = 5, total_bike_slots: int = 10):
+    """Coordinates slots, vehicle allocation, checkout, reports and file output."""
+
+    def __init__(self, db: Database, total_car_slots: int = 5, total_bike_slots: int = 10,
+                 receipt_dir: Path = RECEIPT_DIR, export_dir: Path = EXPORT_DIR):
+        for count in (total_car_slots, total_bike_slots):
+            if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+                raise InvalidInputError("Slot counts must be non-negative integers.")
         self.db = db
-        self.__slots = [ParkingSlot(i, "Car") for i in range(1, total_car_slots + 1)]
-        self.__slots += [ParkingSlot(i, "Bike")
-                         for i in range(total_car_slots + 1, total_car_slots + total_bike_slots + 1)]
-        self._seed_slots()
+        self.receipt_dir = Path(receipt_dir)
+        self.export_dir = Path(export_dir)
+        self.__slots: list[ParkingSlot] = []
+        self._seed_slots(total_car_slots, total_bike_slots)
+        self._load_slots()
 
-    def _seed_slots(self):
-        with self.db.connect() as conn:
-            for slot in self.__slots:
-                conn.execute("INSERT OR IGNORE INTO ParkingSlots(slot_id,slot_type) VALUES(?,?)",
-                             (slot.slot_id, slot.slot_type))
+    # -- setup -------------------------------------------------------------- #
+    def _seed_slots(self, cars: int, bikes: int) -> None:
+        layout = [(i, "Car") for i in range(1, cars + 1)]
+        layout += [(i, "Bike") for i in range(cars + 1, cars + bikes + 1)]
+        with self.db.session(write=True) as conn:
+            conn.executemany("INSERT OR IGNORE INTO ParkingSlots(slot_id,slot_type) VALUES(?,?)", layout)
 
-    def get_availability(self):
-        with self.db.connect() as conn:
-            rows = conn.execute(
-                "SELECT slot_type, COUNT(*) AS total, SUM(is_occupied) AS occupied "
-                "FROM ParkingSlots GROUP BY slot_type ORDER BY slot_type"
-            ).fetchall()
-        return [{"type": r["slot_type"], "total": r["total"],
-                 "occupied": r["occupied"] or 0, "available": r["total"] - (r["occupied"] or 0)}
-                for r in rows]
+    def _load_slots(self) -> None:
+        """The database is authoritative: build ParkingSlot objects from its rows."""
+        with self.db.session() as conn:
+            rows = conn.execute("SELECT slot_id, slot_type FROM ParkingSlots ORDER BY slot_id").fetchall()
+        self.__slots = [ParkingSlot(r["slot_id"], r["slot_type"]) for r in rows]
 
-    def park_vehicle(self, vehicle: Vehicle) -> tuple[int, datetime]:
-        now = datetime.now()
-        with self.db.connect() as conn:
-            existing = conn.execute(
-                "SELECT status FROM Vehicles WHERE vehicle_number=?", (vehicle.vehicle_number,)
-            ).fetchone()
-            if existing and existing["status"] == "PARKED":
+    @property
+    def slots(self) -> tuple[ParkingSlot, ...]:
+        return tuple(self.__slots)
+
+    # -- core operations ------------------------------------------------------ #
+    def park_vehicle(self, vehicle: Vehicle, entry_time: Optional[datetime] = None) -> tuple[int, datetime]:
+        entry = entry_time or datetime.now()
+        stamp = entry.strftime(TIME_FORMAT)
+        with self.db.session(write=True) as conn:
+            if conn.execute("SELECT 1 FROM Visits WHERE vehicle_number=? AND exit_time IS NULL",
+                            (vehicle.vehicle_number,)).fetchone():
                 raise InvalidInputError("This vehicle is already parked.")
-            slot = conn.execute(
-                """SELECT slot_id FROM ParkingSlots
-                   WHERE is_occupied=0 AND (slot_type=? OR slot_type='Any')
-                   ORDER BY slot_id LIMIT 1""",
-                (vehicle.__class__.__name__,)
-            ).fetchone()
-            if not slot:
-                raise NoAvailableSlotError(f"No available slot for {vehicle.__class__.__name__}.")
-            slot_id = slot["slot_id"]
+            free_ids = {r["slot_id"] for r in conn.execute("SELECT slot_id FROM v_free_slots")}
+            slot = next((s for s in self.__slots if s.slot_id in free_ids and s.accepts(vehicle)), None)
+            if slot is None:
+                raise NoAvailableSlotError(f"No available slot for {vehicle.vehicle_type}.")
             conn.execute(
-                """INSERT INTO Vehicles(vehicle_number,vehicle_type,entry_time,exit_time,slot_id,status)
-                   VALUES(?,?,?,NULL,?,'PARKED')
-                   ON CONFLICT(vehicle_number) DO UPDATE SET
-                   vehicle_type=excluded.vehicle_type, entry_time=excluded.entry_time,
-                   exit_time=NULL, slot_id=excluded.slot_id, status='PARKED'""",
-                (vehicle.vehicle_number, vehicle.__class__.__name__, now.strftime(TIME_FORMAT), slot_id)
+                "INSERT INTO Vehicles(vehicle_number,vehicle_type,registered_at) VALUES(?,?,?) "
+                "ON CONFLICT(vehicle_number) DO UPDATE SET vehicle_type=excluded.vehicle_type",
+                (vehicle.vehicle_number, vehicle.vehicle_type, stamp),
             )
-            conn.execute("UPDATE ParkingSlots SET is_occupied=1, vehicle_number=? WHERE slot_id=?",
-                         (vehicle.vehicle_number, slot_id))
-        return slot_id, now
+            conn.execute("INSERT INTO Visits(vehicle_number,slot_id,entry_time) VALUES(?,?,?)",
+                         (vehicle.vehicle_number, slot.slot_id, stamp))
+            # trigger trg_visit_start marks the slot as occupied
+        return slot.slot_id, entry
 
-    def remove_vehicle(self, vehicle_number: str, exit_time: Optional[datetime] = None):
-        number = vehicle_number.strip().upper()
-        if not number:
-            raise InvalidInputError("Vehicle number cannot be empty.")
+    def remove_vehicle(self, vehicle_number: str, exit_time: Optional[datetime] = None) -> Receipt:
+        number = Vehicle.normalize_number(vehicle_number)
         exit_time = exit_time or datetime.now()
-        with self.db.connect() as conn:
+        with self.db.session(write=True) as conn:
             row = conn.execute(
-                "SELECT * FROM Vehicles WHERE vehicle_number=? AND status='PARKED'", (number,)
+                "SELECT vi.visit_id, vi.slot_id, vi.entry_time, v.vehicle_type "
+                "FROM Visits vi JOIN Vehicles v ON v.vehicle_number = vi.vehicle_number "
+                "WHERE vi.vehicle_number=? AND vi.exit_time IS NULL", (number,)
             ).fetchone()
             if not row:
                 raise VehicleNotParkedError("Vehicle is not currently parked.")
             entry = datetime.strptime(row["entry_time"], TIME_FORMAT)
-            duration = max(0.0, (exit_time - entry).total_seconds() / 3600)
-            vehicle = Car(number) if row["vehicle_type"] == "Car" else Bike(number)
-            amount = vehicle.calculate_fee(duration)
-            payment = Payment(number, duration, amount)
-            cur = conn.execute(
-                """INSERT INTO Payments(vehicle_number,duration_hours,amount,payment_time,payment_status)
-                   VALUES(?,?,?,?,?)""",
-                (number, duration, amount, exit_time.strftime(TIME_FORMAT), "PAID")
-            )
-            payment_id = cur.lastrowid
-            conn.execute("UPDATE Vehicles SET exit_time=?,status='EXITED' WHERE vehicle_number=?",
-                         (exit_time.strftime(TIME_FORMAT), number))
-            conn.execute("UPDATE ParkingSlots SET is_occupied=0,vehicle_number=NULL WHERE slot_id=?",
-                         (row["slot_id"],))
-        return Receipt.generate(payment_id, vehicle, row["slot_id"], entry, exit_time, duration, amount)
+            exit_time = max(exit_time, entry)  # never let a clock glitch produce a negative stay
+            duration = (exit_time - entry).total_seconds() / 3600
+            vehicle = Vehicle.create(row["vehicle_type"], number)
+            payment = Payment(row["visit_id"], duration, vehicle.calculate_fee(duration))
+            conn.execute("UPDATE Visits SET exit_time=? WHERE visit_id=?",
+                         (exit_time.strftime(TIME_FORMAT), row["visit_id"]))
+            # trigger trg_visit_end releases the slot
+            payment_id = payment.process_payment(conn, exit_time)
+        receipt = Receipt(payment_id, vehicle, row["slot_id"], entry, exit_time, duration, payment.amount)
+        try:  # the payment is already committed; a file problem must not undo it
+            receipt.save(self.receipt_dir)
+        except OSError:
+            receipt.file_path = None
+        return receipt
 
-    def list_parked_vehicles(self):
-        with self.db.connect() as conn:
+    # -- queries / reports ---------------------------------------------------- #
+    def get_availability(self) -> list[dict]:
+        with self.db.session() as conn:
+            rows = conn.execute(
+                "SELECT slot_type, COUNT(*) AS total, SUM(is_occupied) AS occupied "
+                "FROM ParkingSlots GROUP BY slot_type ORDER BY slot_type"
+            ).fetchall()
+        return [{"type": r["slot_type"], "total": r["total"], "occupied": r["occupied"] or 0,
+                 "available": r["total"] - (r["occupied"] or 0)} for r in rows]
+
+    def list_parked_vehicles(self) -> list[sqlite3.Row]:
+        with self.db.session() as conn:
             return conn.execute(
-                """SELECT vehicle_number,vehicle_type,entry_time,slot_id
-                   FROM Vehicles WHERE status='PARKED' ORDER BY slot_id"""
+                "SELECT vi.vehicle_number, v.vehicle_type, vi.slot_id, vi.entry_time "
+                "FROM Visits vi JOIN Vehicles v ON v.vehicle_number = vi.vehicle_number "
+                "WHERE vi.exit_time IS NULL ORDER BY vi.slot_id"
             ).fetchall()
 
-    def list_slots(self):
-        with self.db.connect() as conn:
+    def list_slots(self) -> list[sqlite3.Row]:
+        with self.db.session() as conn:
             return conn.execute(
-                "SELECT slot_id,slot_type,is_occupied,vehicle_number FROM ParkingSlots ORDER BY slot_id"
+                "SELECT s.slot_id, s.slot_type, s.is_occupied, vi.vehicle_number "
+                "FROM ParkingSlots s "
+                "LEFT JOIN Visits vi ON vi.slot_id = s.slot_id AND vi.exit_time IS NULL "
+                "ORDER BY s.slot_id"
             ).fetchall()
 
-    def payment_history(self):
-        with self.db.connect() as conn:
+    def payment_history(self) -> list[sqlite3.Row]:
+        with self.db.session() as conn:
             return conn.execute(
-                "SELECT payment_id,vehicle_number,duration_hours,amount,payment_time,payment_status "
-                "FROM Payments ORDER BY payment_id DESC"
+                "SELECT p.payment_id, vi.vehicle_number, v.vehicle_type, vi.slot_id, "
+                "       vi.entry_time, vi.exit_time, p.duration_hours, p.amount, "
+                "       p.payment_time, p.payment_status "
+                "FROM Payments p "
+                "JOIN Visits   vi ON vi.visit_id      = p.visit_id "
+                "JOIN Vehicles v  ON v.vehicle_number = vi.vehicle_number "
+                "ORDER BY p.payment_id DESC"
             ).fetchall()
 
+    def visit_history(self, vehicle_number: Optional[str] = None) -> list[sqlite3.Row]:
+        """All visits (open and closed), optionally for one vehicle."""
+        sql = ("SELECT vi.visit_id, vi.vehicle_number, v.vehicle_type, vi.slot_id, "
+               "       vi.entry_time, vi.exit_time, p.amount "
+               "FROM Visits vi "
+               "JOIN Vehicles v ON v.vehicle_number = vi.vehicle_number "
+               "LEFT JOIN Payments p ON p.visit_id = vi.visit_id ")
+        params: tuple = ()
+        if vehicle_number and vehicle_number.strip():
+            sql += "WHERE vi.vehicle_number = ? "
+            params = (Vehicle.normalize_number(vehicle_number),)
+        sql += "ORDER BY vi.visit_id"
+        with self.db.session() as conn:
+            return conn.execute(sql, params).fetchall()
 
-def print_availability(lot: ParkingLot):
+    def daily_revenue(self) -> tuple[list[sqlite3.Row], float]:
+        """Revenue per day and vehicle type (view v_daily_revenue) plus the grand total."""
+        with self.db.session() as conn:
+            rows = conn.execute("SELECT day, vehicle_type, payments, revenue "
+                                "FROM v_daily_revenue ORDER BY day, vehicle_type").fetchall()
+            total = conn.execute(
+                "SELECT COALESCE(SUM(amount), 0) FROM Payments WHERE payment_status='PAID'"
+            ).fetchone()[0]
+        return rows, float(total)
+
+    # -- file handling -------------------------------------------------------- #
+    def export_payments_csv(self, path: Optional[Path] = None) -> Path:
+        """Write the payment history to exports/payments.csv."""
+        path = Path(path) if path else self.export_dir / "payments.csv"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        rows = self.payment_history()
+        header = ["payment_id", "vehicle_number", "vehicle_type", "slot_id", "entry_time",
+                  "exit_time", "duration_hours", "amount", "payment_time", "payment_status"]
+        with path.open("w", newline="", encoding="utf-8") as fh:
+            writer = csv.writer(fh)
+            writer.writerow(header)
+            for r in rows:
+                writer.writerow([r["payment_id"], r["vehicle_number"], r["vehicle_type"], r["slot_id"],
+                                 r["entry_time"], r["exit_time"], f"{r['duration_hours']:.2f}",
+                                 f"{r['amount']:.2f}", r["payment_time"], r["payment_status"]])
+        return path
+
+
+# --------------------------------------------------------------------------- #
+# Menu interface
+# --------------------------------------------------------------------------- #
+MENU = """
+========== SMART PARKING LOT ==========
+ 1. Park a car
+ 2. Park a bike
+ 3. Remove vehicle / Generate receipt
+ 4. View slot availability
+ 5. View parked vehicles
+ 6. View all parking slots
+ 7. View payment history
+ 8. Daily revenue report
+ 9. Vehicle visit history
+10. Export payment history to CSV
+ 0. Exit
+"""
+
+
+def print_availability(lot: ParkingLot) -> None:
     print("\n--- Slot Availability ---")
     for item in lot.get_availability():
         print(f"{item['type']:>4}: {item['available']} available / {item['total']} total "
               f"({item['occupied']} occupied)")
 
 
-def run_menu():
+def park_flow(lot: ParkingLot, vehicle_class: type) -> None:
+    kind = vehicle_class.__name__.lower()
+    vehicle = vehicle_class(input(f"Enter {kind} registration number: "))
+    slot_id, entry = lot.park_vehicle(vehicle)
+    print(f"SUCCESS: {vehicle.vehicle_type} {vehicle.vehicle_number} parked in slot {slot_id}.")
+    print(f"Entry time: {entry.strftime(TIME_FORMAT)}")
+
+
+def checkout_flow(lot: ParkingLot) -> None:
+    receipt = lot.remove_vehicle(input("Enter vehicle registration number: "))
+    print()
+    print(receipt)
+    if receipt.file_path:
+        print(f"Receipt saved to: {receipt.file_path}")
+    else:
+        print("WARNING: payment recorded, but the receipt file could not be written.")
+
+
+def show_parked(lot: ParkingLot) -> None:
+    rows = lot.list_parked_vehicles()
+    print("\n--- Parked Vehicles ---")
+    if not rows:
+        print("No vehicles are currently parked.")
+    for r in rows:
+        print(f"{r['vehicle_number']} | {r['vehicle_type']} | Slot {r['slot_id']} | Since {r['entry_time']}")
+
+
+def show_slots(lot: ParkingLot) -> None:
+    print("\n--- Parking Slots ---")
+    for r in lot.list_slots():
+        state = "OCCUPIED" if r["is_occupied"] else "AVAILABLE"
+        print(f"Slot {r['slot_id']:02} | {r['slot_type']:<4} | {state}"
+              + (f" | {r['vehicle_number']}" if r["vehicle_number"] else ""))
+
+
+def show_payments(lot: ParkingLot) -> None:
+    rows = lot.payment_history()
+    print("\n--- Payment History ---")
+    if not rows:
+        print("No payment records.")
+    for r in rows:
+        print(f"#{r['payment_id']} | {r['vehicle_number']} ({r['vehicle_type']}) | Slot {r['slot_id']} | "
+              f"{r['duration_hours']:.2f} hr | Rs. {r['amount']:.2f} | {r['payment_status']}")
+
+
+def show_revenue(lot: ParkingLot) -> None:
+    rows, total = lot.daily_revenue()
+    print("\n--- Daily Revenue Report ---")
+    if not rows:
+        print("No revenue recorded yet.")
+        return
+    print(f"{'Date':<12} {'Type':<5} {'Payments':>8} {'Revenue':>12}")
+    for r in rows:
+        print(f"{r['day']:<12} {r['vehicle_type']:<5} {r['payments']:>8} {'Rs. ' + format(r['revenue'], '.2f'):>12}")
+    print(f"{'TOTAL':<12} {'':<5} {sum(r['payments'] for r in rows):>8} {'Rs. ' + format(total, '.2f'):>12}")
+
+
+def show_visits(lot: ParkingLot) -> None:
+    number = input("Enter vehicle registration number (blank for all vehicles): ")
+    rows = lot.visit_history(number)
+    print("\n--- Visit History ---")
+    if not rows:
+        print("No visits found.")
+    for r in rows:
+        exit_text = r["exit_time"] or "still parked"
+        fee = f"Rs. {r['amount']:.2f}" if r["amount"] is not None else "-"
+        print(f"Visit {r['visit_id']} | {r['vehicle_number']} ({r['vehicle_type']}) | Slot {r['slot_id']} | "
+              f"{r['entry_time']} -> {exit_text} | {fee}")
+
+
+def run_menu() -> None:
     db = Database()
+    if db.legacy_backup:
+        print(f"NOTE: an old-format database was found and moved to {db.legacy_backup.name}. "
+              "A fresh database has been created.")
     lot = ParkingLot(db)
-    menu = """
-========== SMART PARKING LOT ==========
-1. Park a car
-2. Park a bike
-3. Remove vehicle / Generate receipt
-4. View slot availability
-5. View parked vehicles
-6. View all parking slots
-7. View payment history
-0. Exit
-"""
+    actions = {
+        "1": lambda: park_flow(lot, Car),
+        "2": lambda: park_flow(lot, Bike),
+        "3": lambda: checkout_flow(lot),
+        "4": lambda: print_availability(lot),
+        "5": lambda: show_parked(lot),
+        "6": lambda: show_slots(lot),
+        "7": lambda: show_payments(lot),
+        "8": lambda: show_revenue(lot),
+        "9": lambda: show_visits(lot),
+        "10": lambda: print(f"Exported to: {lot.export_payments_csv()}"),
+    }
     while True:
-        print(menu)
-        choice = input("Enter choice: ").strip()
+        print(MENU)
         try:
-            if choice == "1":
-                number = input("Enter car registration number: ")
-                slot_id, entry = lot.park_vehicle(Car(number))
-                print(f"SUCCESS: Car {number.strip().upper()} parked in slot {slot_id}.")
-                print(f"Entry time: {entry.strftime(TIME_FORMAT)}")
-            elif choice == "2":
-                number = input("Enter bike registration number: ")
-                slot_id, entry = lot.park_vehicle(Bike(number))
-                print(f"SUCCESS: Bike {number.strip().upper()} parked in slot {slot_id}.")
-                print(f"Entry time: {entry.strftime(TIME_FORMAT)}")
-            elif choice == "3":
-                number = input("Enter vehicle registration number: ")
-                print(lot.remove_vehicle(number))
-            elif choice == "4":
-                print_availability(lot)
-            elif choice == "5":
-                rows = lot.list_parked_vehicles()
-                print("\n--- Parked Vehicles ---")
-                if not rows:
-                    print("No vehicles are currently parked.")
-                for r in rows:
-                    print(f"{r['vehicle_number']} | {r['vehicle_type']} | Slot {r['slot_id']} | "
-                          f"Since {r['entry_time']}")
-            elif choice == "6":
-                print("\n--- Parking Slots ---")
-                for r in lot.list_slots():
-                    state = "OCCUPIED" if r["is_occupied"] else "AVAILABLE"
-                    print(f"Slot {r['slot_id']:02} | {r['slot_type']:<4} | {state}"
-                          + (f" | {r['vehicle_number']}" if r["vehicle_number"] else ""))
-            elif choice == "7":
-                rows = lot.payment_history()
-                print("\n--- Payment History ---")
-                if not rows:
-                    print("No payment records.")
-                for r in rows:
-                    print(f"#{r['payment_id']} | {r['vehicle_number']} | "
-                          f"{r['duration_hours']:.2f} hr | Rs. {r['amount']:.2f} | {r['payment_status']}")
-            elif choice == "0":
+            choice = input("Enter choice: ").strip()
+            if choice == "0":
                 print("Thank you for using Smart Parking Lot Management System.")
                 break
+            action = actions.get(choice)
+            if action:
+                action()
             else:
-                print("Invalid menu choice. Enter a number from 0 to 7.")
-        except (ParkingError, ValueError, sqlite3.Error) as exc:
+                print("Invalid menu choice. Enter a number from 0 to 10.")
+        except (ParkingError, ValueError, sqlite3.Error, OSError) as exc:
             print(f"ERROR: {exc}")
         except KeyboardInterrupt:
             print("\nInterrupted. Returning to menu.")
+        except EOFError:
+            print("\nInput closed. Exiting.")
+            break
 
 
 if __name__ == "__main__":

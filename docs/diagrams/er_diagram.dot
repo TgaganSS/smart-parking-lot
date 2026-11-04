@@ -1,0 +1,31 @@
+digraph ER {
+  graph [rankdir=LR, nodesep=0.6, ranksep=1.1, fontname="DejaVu Sans", bgcolor="white", pad=0.3,
+         label="Database ER Diagram (SQLite)", labelloc=t, fontsize=18];
+  node  [shape=plain, fontname="DejaVu Sans", fontsize=11];
+  edge  [fontname="DejaVu Sans", fontsize=10, arrowhead=none];
+
+  Vehicles [label=<
+   <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">
+    <TR><TD BGCOLOR="#fff8e1" ALIGN="CENTER"><B>Vehicles</B></TD></TR><HR/>
+    <TR><TD ALIGN="LEFT"><U>vehicle_number</U>  TEXT  PK<BR ALIGN="LEFT"/>vehicle_type  TEXT  (Car | Bike)<BR ALIGN="LEFT"/>registered_at  TEXT<BR ALIGN="LEFT"/></TD></TR>
+   </TABLE>>];
+  ParkingSlots [label=<
+   <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">
+    <TR><TD BGCOLOR="#e8f5e9" ALIGN="CENTER"><B>ParkingSlots</B></TD></TR><HR/>
+    <TR><TD ALIGN="LEFT"><U>slot_id</U>  INTEGER  PK<BR ALIGN="LEFT"/>slot_type  TEXT  (Car | Bike | Any)<BR ALIGN="LEFT"/>is_occupied  INTEGER  (0 | 1, set by triggers)<BR ALIGN="LEFT"/></TD></TR>
+   </TABLE>>];
+  Visits [label=<
+   <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">
+    <TR><TD BGCOLOR="#e3f2fd" ALIGN="CENTER"><B>Visits</B></TD></TR><HR/>
+    <TR><TD ALIGN="LEFT"><U>visit_id</U>  INTEGER  PK<BR ALIGN="LEFT"/>vehicle_number  TEXT  FK<BR ALIGN="LEFT"/>slot_id  INTEGER  FK<BR ALIGN="LEFT"/>entry_time  TEXT<BR ALIGN="LEFT"/>exit_time  TEXT  (NULL while parked)<BR ALIGN="LEFT"/></TD></TR>
+   </TABLE>>];
+  Payments [label=<
+   <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">
+    <TR><TD BGCOLOR="#fce4ec" ALIGN="CENTER"><B>Payments</B></TD></TR><HR/>
+    <TR><TD ALIGN="LEFT"><U>payment_id</U>  INTEGER  PK<BR ALIGN="LEFT"/>visit_id  INTEGER  FK, UNIQUE<BR ALIGN="LEFT"/>duration_hours  REAL<BR ALIGN="LEFT"/>amount  REAL<BR ALIGN="LEFT"/>payment_time  TEXT<BR ALIGN="LEFT"/>payment_status  TEXT  (PAID | FAILED)<BR ALIGN="LEFT"/></TD></TR>
+   </TABLE>>];
+
+  Vehicles     -> Visits   [taillabel="1", headlabel="0..*", label="  makes"];
+  ParkingSlots -> Visits   [taillabel="1", headlabel="0..*", label="  hosts"];
+  Visits       -> Payments [taillabel="1", headlabel="0..1", label="  settled by"];
+}

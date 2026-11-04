@@ -1,0 +1,39 @@
+test_check_constraints_and_foreign_keys (test_parking.TestDatabaseAndSql.test_check_constraints_and_foreign_keys) ... ok
+test_connections_are_closed (test_parking.TestDatabaseAndSql.test_connections_are_closed) ... ok
+test_database_enforces_one_open_visit_per_vehicle_and_slot (test_parking.TestDatabaseAndSql.test_database_enforces_one_open_visit_per_vehicle_and_slot) ... ok
+test_failed_operation_rolls_back (test_parking.TestDatabaseAndSql.test_failed_operation_rolls_back) ... ok
+test_legacy_database_is_backed_aside (test_parking.TestDatabaseAndSql.test_legacy_database_is_backed_aside) ... ok
+test_payment_history_join_and_revenue_report (test_parking.TestDatabaseAndSql.test_payment_history_join_and_revenue_report) ... ok
+test_reparking_same_vehicle_keeps_history (test_parking.TestDatabaseAndSql.test_reparking_same_vehicle_keeps_history) ... ok
+test_triggers_free_slot_on_exit (test_parking.TestDatabaseAndSql.test_triggers_free_slot_on_exit) ... ok
+test_vehicle_type_can_change_for_same_plate (test_parking.TestDatabaseAndSql.test_vehicle_type_can_change_for_same_plate) ... ok
+test_payment_amount_setter_validates (test_parking.TestEncapsulation.test_payment_amount_setter_validates) ... ok
+test_private_attributes_not_directly_writable (test_parking.TestEncapsulation.test_private_attributes_not_directly_writable) ... ok
+test_slot_accepts (test_parking.TestEncapsulation.test_slot_accepts) ... ok
+test_slot_type_setter_validates (test_parking.TestEncapsulation.test_slot_type_setter_validates) ... ok
+test_vehicle_number_setter_validates_and_normalizes (test_parking.TestEncapsulation.test_vehicle_number_setter_validates_and_normalizes) ... ok
+test_fee_table (test_parking.TestFees.test_fee_table) ... ok
+test_floating_point_noise_is_not_billed_as_extra_hour (test_parking.TestFees.test_floating_point_noise_is_not_billed_as_extra_hour) ... ok
+test_negative_or_non_numeric_duration_rejected (test_parking.TestFees.test_negative_or_non_numeric_duration_rejected) ... ok
+test_polymorphism_and_abstraction (test_parking.TestFees.test_polymorphism_and_abstraction) ... ok
+test_csv_export (test_parking.TestFileHandling.test_csv_export) ... ok
+test_csv_export_with_no_payments_has_header_only (test_parking.TestFileHandling.test_csv_export_with_no_payments_has_header_only) ... ok
+test_receipt_file_failure_does_not_undo_payment (test_parking.TestFileHandling.test_receipt_file_failure_does_not_undo_payment) ... ok
+test_receipt_text_file_is_written (test_parking.TestFileHandling.test_receipt_text_file_is_written) ... ok
+test_tc01_park_valid_car (test_parking.TestFunctionalCases.test_tc01_park_valid_car) ... ok
+test_tc02_park_valid_bike (test_parking.TestFunctionalCases.test_tc02_park_valid_bike) ... ok
+test_tc03_duplicate_parking_rejected (test_parking.TestFunctionalCases.test_tc03_duplicate_parking_rejected) ... ok
+test_tc04_blank_vehicle_number_rejected (test_parking.TestFunctionalCases.test_tc04_blank_vehicle_number_rejected) ... ok
+test_tc05_full_car_slots (test_parking.TestFunctionalCases.test_tc05_full_car_slots) ... ok
+test_tc06_checkout_saves_payment_receipt_and_frees_slot (test_parking.TestFunctionalCases.test_tc06_checkout_saves_payment_receipt_and_frees_slot) ... ok
+test_tc07_checkout_unknown_vehicle (test_parking.TestFunctionalCases.test_tc07_checkout_unknown_vehicle) ... ok
+test_tc08_availability_counts (test_parking.TestFunctionalCases.test_tc08_availability_counts) ... ok
+test_tc09_data_persists_between_runs (test_parking.TestFunctionalCases.test_tc09_data_persists_between_runs) ... ok
+test_tc10_invalid_menu_choice (test_parking.TestFunctionalCases.test_tc10_invalid_menu_choice) ... ok
+test_tc11_car_fee_one_hour (test_parking.TestFunctionalCases.test_tc11_car_fee_one_hour) ... ok
+test_tc12_bike_fee_1_2_hours (test_parking.TestFunctionalCases.test_tc12_bike_fee_1_2_hours) ... ok
+
+----------------------------------------------------------------------
+Ran 34 tests in 0.746s
+
+OK

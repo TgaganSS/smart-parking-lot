@@ -1,0 +1,323 @@
+
+========== SMART PARKING LOT ==========
+ 1. Park a car
+ 2. Park a bike
+ 3. Remove vehicle / Generate receipt
+ 4. View slot availability
+ 5. View parked vehicles
+ 6. View all parking slots
+ 7. View payment history
+ 8. Daily revenue report
+ 9. Vehicle visit history
+10. Export payment history to CSV
+ 0. Exit
+
+Enter choice: 1
+Enter car registration number: TN09AB1234
+SUCCESS: Car TN09AB1234 parked in slot 1.
+Entry time: 2026-11-04 19:04:58
+
+========== SMART PARKING LOT ==========
+ 1. Park a car
+ 2. Park a bike
+ 3. Remove vehicle / Generate receipt
+ 4. View slot availability
+ 5. View parked vehicles
+ 6. View all parking slots
+ 7. View payment history
+ 8. Daily revenue report
+ 9. Vehicle visit history
+10. Export payment history to CSV
+ 0. Exit
+
+Enter choice: 2
+Enter bike registration number: TN22XY7788
+SUCCESS: Bike TN22XY7788 parked in slot 6.
+Entry time: 2026-11-04 19:04:58
+
+========== SMART PARKING LOT ==========
+ 1. Park a car
+ 2. Park a bike
+ 3. Remove vehicle / Generate receipt
+ 4. View slot availability
+ 5. View parked vehicles
+ 6. View all parking slots
+ 7. View payment history
+ 8. Daily revenue report
+ 9. Vehicle visit history
+10. Export payment history to CSV
+ 0. Exit
+
+Enter choice: 1
+Enter car registration number: tn 09 ab 1234
+ERROR: This vehicle is already parked.
+
+========== SMART PARKING LOT ==========
+ 1. Park a car
+ 2. Park a bike
+ 3. Remove vehicle / Generate receipt
+ 4. View slot availability
+ 5. View parked vehicles
+ 6. View all parking slots
+ 7. View payment history
+ 8. Daily revenue report
+ 9. Vehicle visit history
+10. Export payment history to CSV
+ 0. Exit
+
+Enter choice: 1
+Enter car registration number: 
+ERROR: Vehicle number must be 1-15 letters/digits (spaces and hyphens are ignored).
+
+========== SMART PARKING LOT ==========
+ 1. Park a car
+ 2. Park a bike
+ 3. Remove vehicle / Generate receipt
+ 4. View slot availability
+ 5. View parked vehicles
+ 6. View all parking slots
+ 7. View payment history
+ 8. Daily revenue report
+ 9. Vehicle visit history
+10. Export payment history to CSV
+ 0. Exit
+
+Enter choice: 2
+Enter bike registration number: MH12-CD 0001
+SUCCESS: Bike MH12CD0001 parked in slot 7.
+Entry time: 2026-11-04 19:04:58
+
+========== SMART PARKING LOT ==========
+ 1. Park a car
+ 2. Park a bike
+ 3. Remove vehicle / Generate receipt
+ 4. View slot availability
+ 5. View parked vehicles
+ 6. View all parking slots
+ 7. View payment history
+ 8. Daily revenue report
+ 9. Vehicle visit history
+10. Export payment history to CSV
+ 0. Exit
+
+Enter choice: 4
+
+--- Slot Availability ---
+Bike: 8 available / 10 total (2 occupied)
+ Car: 4 available / 5 total (1 occupied)
+
+========== SMART PARKING LOT ==========
+ 1. Park a car
+ 2. Park a bike
+ 3. Remove vehicle / Generate receipt
+ 4. View slot availability
+ 5. View parked vehicles
+ 6. View all parking slots
+ 7. View payment history
+ 8. Daily revenue report
+ 9. Vehicle visit history
+10. Export payment history to CSV
+ 0. Exit
+
+Enter choice: 5
+
+--- Parked Vehicles ---
+TN09AB1234 | Car | Slot 1 | Since 2026-11-04 19:04:58
+TN22XY7788 | Bike | Slot 6 | Since 2026-11-04 19:04:58
+MH12CD0001 | Bike | Slot 7 | Since 2026-11-04 19:04:58
+
+========== SMART PARKING LOT ==========
+ 1. Park a car
+ 2. Park a bike
+ 3. Remove vehicle / Generate receipt
+ 4. View slot availability
+ 5. View parked vehicles
+ 6. View all parking slots
+ 7. View payment history
+ 8. Daily revenue report
+ 9. Vehicle visit history
+10. Export payment history to CSV
+ 0. Exit
+
+Enter choice: 6
+
+--- Parking Slots ---
+Slot 01 | Car  | OCCUPIED | TN09AB1234
+Slot 02 | Car  | AVAILABLE
+Slot 03 | Car  | AVAILABLE
+Slot 04 | Car  | AVAILABLE
+Slot 05 | Car  | AVAILABLE
+Slot 06 | Bike | OCCUPIED | TN22XY7788
+Slot 07 | Bike | OCCUPIED | MH12CD0001
+Slot 08 | Bike | AVAILABLE
+Slot 09 | Bike | AVAILABLE
+Slot 10 | Bike | AVAILABLE
+Slot 11 | Bike | AVAILABLE
+Slot 12 | Bike | AVAILABLE
+Slot 13 | Bike | AVAILABLE
+Slot 14 | Bike | AVAILABLE
+Slot 15 | Bike | AVAILABLE
+
+========== SMART PARKING LOT ==========
+ 1. Park a car
+ 2. Park a bike
+ 3. Remove vehicle / Generate receipt
+ 4. View slot availability
+ 5. View parked vehicles
+ 6. View all parking slots
+ 7. View payment history
+ 8. Daily revenue report
+ 9. Vehicle visit history
+10. Export payment history to CSV
+ 0. Exit
+
+Enter choice: 3
+Enter vehicle registration number: TN22XY7788
+
+==========================================
+          SMART PARKING RECEIPT
+==========================================
+Receipt / Payment ID : 6
+Vehicle              : TN22XY7788
+Vehicle type         : Bike
+Parking slot         : 6
+Entry time           : 2026-11-04 19:04:58
+Exit time            : 2026-11-04 19:04:58
+Duration             : 0.00 hour(s)
+Billable hours       : 1 @ Rs. 20.00/hr
+Amount paid          : Rs. 20.00
+==========================================
+Receipt saved to: /tmp/demo/smart-parking-lot/receipts/receipt_0006.txt
+
+========== SMART PARKING LOT ==========
+ 1. Park a car
+ 2. Park a bike
+ 3. Remove vehicle / Generate receipt
+ 4. View slot availability
+ 5. View parked vehicles
+ 6. View all parking slots
+ 7. View payment history
+ 8. Daily revenue report
+ 9. Vehicle visit history
+10. Export payment history to CSV
+ 0. Exit
+
+Enter choice: 3
+Enter vehicle registration number: ZZ9999
+ERROR: Vehicle is not currently parked.
+
+========== SMART PARKING LOT ==========
+ 1. Park a car
+ 2. Park a bike
+ 3. Remove vehicle / Generate receipt
+ 4. View slot availability
+ 5. View parked vehicles
+ 6. View all parking slots
+ 7. View payment history
+ 8. Daily revenue report
+ 9. Vehicle visit history
+10. Export payment history to CSV
+ 0. Exit
+
+Enter choice: 7
+
+--- Payment History ---
+#6 | TN22XY7788 (Bike) | Slot 6 | 0.00 hr | Rs. 20.00 | PAID
+#5 | TN09AB1234 (Car) | Slot 1 | 0.50 hr | Rs. 40.00 | PAID
+#4 | TN07QR5566 (Bike) | Slot 6 | 3.33 hr | Rs. 80.00 | PAID
+#3 | KA01MN4321 (Car) | Slot 1 | 1.02 hr | Rs. 80.00 | PAID
+#2 | TN22XY7788 (Bike) | Slot 6 | 0.75 hr | Rs. 20.00 | PAID
+#1 | TN09AB1234 (Car) | Slot 1 | 2.50 hr | Rs. 120.00 | PAID
+
+========== SMART PARKING LOT ==========
+ 1. Park a car
+ 2. Park a bike
+ 3. Remove vehicle / Generate receipt
+ 4. View slot availability
+ 5. View parked vehicles
+ 6. View all parking slots
+ 7. View payment history
+ 8. Daily revenue report
+ 9. Vehicle visit history
+10. Export payment history to CSV
+ 0. Exit
+
+Enter choice: 8
+
+--- Daily Revenue Report ---
+Date         Type  Payments      Revenue
+2026-11-02   Bike         1    Rs. 20.00
+2026-11-02   Car          1   Rs. 120.00
+2026-11-03   Bike         1    Rs. 80.00
+2026-11-03   Car          2   Rs. 120.00
+2026-11-04   Bike         1    Rs. 20.00
+TOTAL                     6   Rs. 360.00
+
+========== SMART PARKING LOT ==========
+ 1. Park a car
+ 2. Park a bike
+ 3. Remove vehicle / Generate receipt
+ 4. View slot availability
+ 5. View parked vehicles
+ 6. View all parking slots
+ 7. View payment history
+ 8. Daily revenue report
+ 9. Vehicle visit history
+10. Export payment history to CSV
+ 0. Exit
+
+Enter choice: 9
+Enter vehicle registration number (blank for all vehicles): TN09AB1234
+
+--- Visit History ---
+Visit 1 | TN09AB1234 (Car) | Slot 1 | 2026-11-02 09:05:58 -> 2026-11-02 11:35:58 | Rs. 120.00
+Visit 5 | TN09AB1234 (Car) | Slot 1 | 2026-11-03 18:00:58 -> 2026-11-03 18:30:58 | Rs. 40.00
+Visit 6 | TN09AB1234 (Car) | Slot 1 | 2026-11-04 19:04:58 -> still parked | -
+
+========== SMART PARKING LOT ==========
+ 1. Park a car
+ 2. Park a bike
+ 3. Remove vehicle / Generate receipt
+ 4. View slot availability
+ 5. View parked vehicles
+ 6. View all parking slots
+ 7. View payment history
+ 8. Daily revenue report
+ 9. Vehicle visit history
+10. Export payment history to CSV
+ 0. Exit
+
+Enter choice: 10
+Exported to: /tmp/demo/smart-parking-lot/exports/payments.csv
+
+========== SMART PARKING LOT ==========
+ 1. Park a car
+ 2. Park a bike
+ 3. Remove vehicle / Generate receipt
+ 4. View slot availability
+ 5. View parked vehicles
+ 6. View all parking slots
+ 7. View payment history
+ 8. Daily revenue report
+ 9. Vehicle visit history
+10. Export payment history to CSV
+ 0. Exit
+
+Enter choice: 99
+Invalid menu choice. Enter a number from 0 to 10.
+
+========== SMART PARKING LOT ==========
+ 1. Park a car
+ 2. Park a bike
+ 3. Remove vehicle / Generate receipt
+ 4. View slot availability
+ 5. View parked vehicles
+ 6. View all parking slots
+ 7. View payment history
+ 8. Daily revenue report
+ 9. Vehicle visit history
+10. Export payment history to CSV
+ 0. Exit
+
+Enter choice: 0
+Thank you for using Smart Parking Lot Management System.

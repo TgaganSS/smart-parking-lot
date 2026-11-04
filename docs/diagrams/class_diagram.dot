@@ -1,0 +1,89 @@
+digraph UML {
+  graph [rankdir=BT, nodesep=0.45, ranksep=0.7, fontname="DejaVu Sans", bgcolor="white", pad=0.3,
+         label="Smart Parking Lot Management System - UML Class Diagram", labelloc=t, fontsize=18];
+  node  [shape=plain, fontname="DejaVu Sans", fontsize=11];
+  edge  [fontname="DejaVu Sans", fontsize=9];
+
+  Vehicle [label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4" BGCOLOR="#fff8e1">
+      <TR><TD><I>&lt;&lt;abstract&gt;&gt;</I><BR/><B><I>Vehicle</I></B></TD></TR>
+      <HR/>
+      <TR><TD ALIGN="LEFT">- vehicle_number : str</TD></TR>
+      <HR/>
+      <TR><TD ALIGN="LEFT">+ vehicle_number (validating setter)<BR ALIGN="LEFT"/>+ vehicle_type : str {readOnly}<BR ALIGN="LEFT"/><I>+ get_hourly_rate() : float {abstract}</I><BR ALIGN="LEFT"/>+ billable_hours(hours) : int {static}<BR ALIGN="LEFT"/>+ calculate_fee(hours) : float<BR ALIGN="LEFT"/>+ create(type, number) : Vehicle {static}<BR ALIGN="LEFT"/></TD></TR>
+    </TABLE>>];
+  Car  [label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4" BGCOLOR="#fff8e1">
+      <TR><TD><B>Car</B></TD></TR><HR/>
+      <TR><TD ALIGN="LEFT">+ get_hourly_rate() : float  (40.0)<BR ALIGN="LEFT"/></TD></TR>
+    </TABLE>>];
+  Bike [label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4" BGCOLOR="#fff8e1">
+      <TR><TD><B>Bike</B></TD></TR><HR/>
+      <TR><TD ALIGN="LEFT">+ get_hourly_rate() : float  (20.0)<BR ALIGN="LEFT"/></TD></TR>
+    </TABLE>>];
+
+  ParkingSlot [label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4" BGCOLOR="#e8f5e9">
+      <TR><TD><B>ParkingSlot</B></TD></TR><HR/>
+      <TR><TD ALIGN="LEFT">- slot_id : int<BR ALIGN="LEFT"/>- slot_type : str<BR ALIGN="LEFT"/></TD></TR><HR/>
+      <TR><TD ALIGN="LEFT">+ slot_type (validating setter)<BR ALIGN="LEFT"/>+ accepts(vehicle) : bool<BR ALIGN="LEFT"/></TD></TR>
+    </TABLE>>];
+
+  ParkingLot [label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4" BGCOLOR="#e3f2fd">
+      <TR><TD><B>ParkingLot</B></TD></TR><HR/>
+      <TR><TD ALIGN="LEFT">- slots : list[ParkingSlot]<BR ALIGN="LEFT"/>- db : Database<BR ALIGN="LEFT"/></TD></TR><HR/>
+      <TR><TD ALIGN="LEFT">+ park_vehicle(vehicle, entry_time) : tuple<BR ALIGN="LEFT"/>+ remove_vehicle(number, exit_time) : Receipt<BR ALIGN="LEFT"/>+ get_availability() : list<BR ALIGN="LEFT"/>+ list_parked_vehicles() : list<BR ALIGN="LEFT"/>+ list_slots() : list<BR ALIGN="LEFT"/>+ payment_history() : list<BR ALIGN="LEFT"/>+ visit_history(number) : list<BR ALIGN="LEFT"/>+ daily_revenue() : tuple<BR ALIGN="LEFT"/>+ export_payments_csv(path) : Path<BR ALIGN="LEFT"/></TD></TR>
+    </TABLE>>];
+
+  Database [label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4" BGCOLOR="#f3e5f5">
+      <TR><TD><B>Database</B></TD></TR><HR/>
+      <TR><TD ALIGN="LEFT">- path : Path<BR ALIGN="LEFT"/>- schema_path : Path<BR ALIGN="LEFT"/></TD></TR><HR/>
+      <TR><TD ALIGN="LEFT">+ session(write) : context manager<BR ALIGN="LEFT"/>+ initialize() : None<BR ALIGN="LEFT"/></TD></TR>
+    </TABLE>>];
+
+  Payment [label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4" BGCOLOR="#fce4ec">
+      <TR><TD><B>Payment</B></TD></TR><HR/>
+      <TR><TD ALIGN="LEFT">- visit_id : int<BR ALIGN="LEFT"/>- amount : float<BR ALIGN="LEFT"/>- status : str<BR ALIGN="LEFT"/></TD></TR><HR/>
+      <TR><TD ALIGN="LEFT">+ amount, status (validating setters)<BR ALIGN="LEFT"/>+ process_payment(conn, paid_at) : int<BR ALIGN="LEFT"/></TD></TR>
+    </TABLE>>];
+
+  Receipt [label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4" BGCOLOR="#fce4ec">
+      <TR><TD><B>Receipt</B></TD></TR><HR/>
+      <TR><TD ALIGN="LEFT">+ receipt_id : int<BR ALIGN="LEFT"/>+ file_path : Path<BR ALIGN="LEFT"/></TD></TR><HR/>
+      <TR><TD ALIGN="LEFT">+ render() : str<BR ALIGN="LEFT"/>+ save(directory) : Path  (text file)<BR ALIGN="LEFT"/></TD></TR>
+    </TABLE>>];
+
+  ParkingError [label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4" BGCOLOR="#eeeeee">
+      <TR><TD><I>&lt;&lt;exception&gt;&gt;</I><BR/><B>ParkingError</B></TD></TR></TABLE>>];
+  InvalidInputError [label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4" BGCOLOR="#eeeeee"><TR><TD><B>InvalidInputError</B></TD></TR></TABLE>>];
+  NoAvailableSlotError [label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4" BGCOLOR="#eeeeee"><TR><TD><B>NoAvailableSlotError</B></TD></TR></TABLE>>];
+  VehicleNotParkedError [label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4" BGCOLOR="#eeeeee"><TR><TD><B>VehicleNotParkedError</B></TD></TR></TABLE>>];
+
+  // inheritance (hollow triangle)
+  Car  -> Vehicle [arrowhead=empty];
+  Bike -> Vehicle [arrowhead=empty];
+  InvalidInputError     -> ParkingError [arrowhead=empty];
+  NoAvailableSlotError  -> ParkingError [arrowhead=empty];
+  VehicleNotParkedError -> ParkingError [arrowhead=empty];
+
+  // composition (filled diamond at the whole = ParkingLot)
+  ParkingLot -> ParkingSlot [dir=both, arrowtail=diamond, arrowhead=none, taillabel="1", headlabel="1..*", labeldistance=2, label="  composition"];
+
+  // associations / dependencies
+  ParkingLot -> Database [arrowhead=vee, label="  uses"];
+  ParkingLot -> Payment  [arrowhead=vee, style=dashed, label="  creates"];
+  ParkingLot -> Receipt  [arrowhead=vee, style=dashed, label="  creates"];
+  ParkingLot -> Vehicle  [arrowhead=vee, style=dashed, label="  parks / creates"];
+  ParkingSlot -> Vehicle [arrowhead=vee, style=dashed, label="  accepts()"];
+  Receipt -> Vehicle     [arrowhead=vee, label="  vehicle"];
+  Payment -> Database    [arrowhead=vee, style=dashed, label="  saved via"];
+}
