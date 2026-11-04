@@ -34,6 +34,27 @@ exports/              created at run time: payments.csv
 
 ## Requirements
 Python 3.10 or later. SQLite is included in Python; no third-party packages are needed.
+## Screenshots
+
+### Parking and input validation
+<img src="docs/screenshots/01_parking_and_validation.png" width="650" alt="Parking and validation">
+
+### Availability and slot map
+<img src="docs/screenshots/02_availability_and_slots.png" width="650" alt="Availability and slots">
+
+### Checkout, receipt and payment history
+<img src="docs/screenshots/03_checkout_receipt_history.png" width="650" alt="Checkout and receipt">
+
+### Revenue report, CSV export and exit
+<img src="docs/screenshots/04_reports_export_exit.png" width="650" alt="Reports and export">
+
+## Diagrams
+
+### UML class diagram
+![UML class diagram](docs/diagrams/class_diagram.png)
+
+### ER diagram
+![ER diagram](docs/diagrams/er_diagram.png)
 
 ## Run
 ```bash
