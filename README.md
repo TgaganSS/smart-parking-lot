@@ -29,7 +29,7 @@ Python 3.10 or later. SQLite is included in Python; no third-party package is re
 1. Extract the project ZIP.
 2. Open a terminal in this folder.
 3. Run:
-
+  ![Sample output](docs/sample_output_screenshot.png)
    ```bash
    python parking_system.py
    ```
