@@ -131,3 +131,38 @@ Everything required by the submission checklist is in `docs/`: problem statement
 - A payment is recorded as `PAID` at checkout; there is no real payment gateway.
 - The screenshots in `docs/screenshots/` were rendered from the captured output of a real run (`docs/sample_run/session_transcript.txt`). Earlier days in that run were pre-loaded through the program's own API with explicit timestamps so the revenue report shows several dates. To submit your own screenshots instead, run the program and capture your terminal.
 - For a clean demo, close the program and delete `parking.db`, `receipts/` and `exports/`.
+
+## Design decisions
+
+**Why SQLite?**
+The assignment asks for SQL storage of vehicles, slots and payments. SQLite ships with Python, needs no server or installation, and still supports real SQL features (foreign keys, triggers, views, transactions).
+
+**Why a separate `Visits` table?**
+A vehicle can park many times. Storing entry and exit times in `Vehicles` would overwrite earlier history. Each parking session is its own `Visits` row, so every visit and payment is preserved.
+
+**Why enforce rules in the database as well as in Python?**
+Partial unique indexes guarantee that a vehicle has at most one open visit and a slot holds at most one open visit. Even if the Python code had a bug, the database would reject the invalid state. Triggers keep `is_occupied` in sync with the visit lifecycle, so the flag cannot drift.
+
+**Why one transaction per operation?**
+Parking and checkout each run inside a single commit-or-rollback transaction (`Database.session()`). A failure halfway never leaves a half-written vehicle, visit or payment.
+
+**Why is the receipt file written after the commit?**
+The payment is the important record. If the receipt file cannot be written (for example, a permissions error), the payment stays saved and the user gets a warning instead of losing the transaction.
+
+**Why is `Vehicle` abstract?**
+A generic "vehicle" has no hourly rate, so `get_hourly_rate()` is abstract. `Car` and `Bike` override it, and `calculate_fee()` works on any `Vehicle` through polymorphism. Adding a new type (for example, a Truck) needs only a new subclass and one entry in `VEHICLE_TYPES`.
+
+**Why round up to started hours?**
+This is the common parking-lot billing rule: any part of an hour is charged as a full hour, with a one-hour minimum. `round(duration, 6)` is applied first so floating-point noise (for example, 1.0000000000002 hours) is not billed as an extra hour.
+
+**Why normalise registration numbers?**
+`tn 09-ab 1234` and `TN09AB1234` are the same vehicle. Normalising on input prevents duplicate records and false "not parked" errors at checkout.
+
+**Why SQLite plus text and CSV files?**
+SQLite is the source of truth for all data. Text receipts and the CSV export satisfy the file-handling requirement and give the user human-readable output.
+
+## Limitations and future work
+- Single-user, local application (no concurrent multi-gate access).
+- Slot allocation picks the first free compatible slot; it does not consider distance to the exit.
+- Payment is recorded as `PAID` at checkout; there is no real payment gateway.
+- Possible extensions: reserved slots, monthly passes, peak-hour pricing, a GUI or web front end.
